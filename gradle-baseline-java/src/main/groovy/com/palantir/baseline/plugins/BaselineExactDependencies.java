@@ -26,8 +26,8 @@ import com.palantir.baseline.tasks.CheckUnusedDependenciesParentTask;
 import com.palantir.baseline.tasks.CheckUnusedDependenciesTask;
 import java.io.File;
 import java.io.IOException;
+import java.util.HashSet;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -270,7 +270,7 @@ public final class BaselineExactDependencies implements Plugin<Project> {
 
     @ThreadSafe
     public static final class Indexes {
-        private final Map<String, ResolvedArtifact> classToDependency = new ConcurrentHashMap<>();
+        private final Map<String, Set<ResolvedArtifact>> classToDependency = new ConcurrentHashMap<>();
         private final Map<ResolvedArtifact, Set<String>> classesFromArtifact = new ConcurrentHashMap<>();
         private final Map<ResolvedArtifact, ResolvedDependency> artifactsFromDependency = new ConcurrentHashMap<>();
 
@@ -286,7 +286,9 @@ public final class BaselineExactDependencies implements Plugin<Project> {
                     Set<String> classesInArtifact =
                             JAR_ANALYZER.analyze(jar.toURI().toURL());
                     classesFromArtifact.put(artifact, classesInArtifact);
-                    classesInArtifact.forEach(clazz -> classToDependency.put(clazz, artifact));
+                    classesInArtifact.forEach(clazz -> classToDependency
+                            .computeIfAbsent(clazz, _ignored -> new HashSet<>())
+                            .add(artifact));
                 } catch (IOException e) {
                     throw new RuntimeException("Unable to analyze artifact", e);
                 }
@@ -298,8 +300,8 @@ public final class BaselineExactDependencies implements Plugin<Project> {
         }
 
         /** Given a class, what dependency brought it in. */
-        public Optional<ResolvedArtifact> classToDependency(String clazz) {
-            return Optional.ofNullable(classToDependency.get(clazz));
+        public Stream<ResolvedArtifact> classToArtifacts(String clazz) {
+            return classToDependency.getOrDefault(clazz, ImmutableSet.of()).stream();
         }
 
         /** Given an artifact, what classes does it contain. */
